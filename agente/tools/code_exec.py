@@ -1,8 +1,7 @@
-"""Funzione 4.1: esecuzione sandboxata del codice generato.
+"""Funzione 4.1: esecuzione del codice generato in un sottoprocesso isolato.
 
-Isolamento a livello di processo/timeout (subprocess con `-I` e ambiente ridotto),
-non un sandbox filesystem/rete completo: su Windows senza container Docker questo
-e' il livello di restrizione praticabile per uno scopo didattico.
+Isolamento a livello di processo (subprocess con `-I`, timeout, ambiente ridotto),
+non un sandbox filesystem/rete completo: sufficiente per uno scopo didattico.
 """
 
 import os
@@ -14,18 +13,47 @@ import memory
 
 DEFAULT_TIMEOUT = 8
 
-_SAFE_ENV_KEYS = ("SystemRoot", "PATH", "TEMP", "TMP", "windir")
+# Variabili minime da passare al sottoprocesso, diverse per sistema operativo:
+# su Windows servono SystemRoot/TEMP/ecc., su Linux/macOS HOME/TMPDIR/LANG.
+if os.name == "nt":
+    _SAFE_ENV_KEYS = ("SystemRoot", "PATH", "TEMP", "TMP", "windir", "PATHEXT")
+else:
+    _SAFE_ENV_KEYS = ("PATH", "HOME", "TMPDIR", "LANG", "LC_ALL")
 
 
-# Ambiente minimo passato al sottoprocesso: solo le variabili indispensabili
-# per eseguire Python su Windows, per non esporre il resto dell'ambiente dell'utente.
 def _restricted_env() -> dict:
+    """Costruisce l'ambiente minimo da passare al sottoprocesso.
+
+    Include solo le variabili indispensabili a eseguire Python sul sistema
+    operativo corrente, per non esporre il resto dell'ambiente dell'utente.
+
+    Returns:
+        Un dizionario {nome_variabile: valore} con le sole chiavi consentite
+        effettivamente presenti nell'ambiente.
+    """
     return {key: os.environ[key] for key in _SAFE_ENV_KEYS if key in os.environ}
 
 
-# Esegue un file .py in un sottoprocesso isolato (`-I` disabilita site-packages utente
-# e variabili PYTHON*) con timeout ed environment ristretto.
-def run_file(path: str, timeout: int = DEFAULT_TIMEOUT) -> tuple[str, str, int]:
+def run_file(path: str, timeout: int = DEFAULT_TIMEOUT, input_text: str | None = None) -> tuple[str, str, int]:
+    """Esegue un file Python in un sottoprocesso isolato.
+
+    Il processo viene avviato con il flag `-I` (isolated mode), un timeout e un
+    ambiente ridotto, per contenere gli effetti di codice non fidato.
+
+    Args:
+        path: Percorso del file .py da eseguire.
+        timeout: Secondi massimi di esecuzione prima dell'interruzione.
+        input_text: Se fornito, viene inviato sullo stdin del processo
+            (utile per testare codice che usa input()).
+
+    Returns:
+        Una tupla (stdout, stderr, returncode). In caso di timeout, returncode
+        vale -1 e stderr contiene il messaggio di interruzione.
+
+    Raises:
+        FileNotFoundError: Se il file non esiste.
+        ValueError: Se il file non ha estensione .py.
+    """
     file_path = Path(path)
     if not file_path.exists():
         raise FileNotFoundError(f"File non trovato: {path}")
@@ -35,6 +63,7 @@ def run_file(path: str, timeout: int = DEFAULT_TIMEOUT) -> tuple[str, str, int]:
     try:
         result = subprocess.run(
             [sys.executable, "-I", str(file_path)],
+            input=input_text,
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -46,8 +75,21 @@ def run_file(path: str, timeout: int = DEFAULT_TIMEOUT) -> tuple[str, str, int]:
         return "", f"Esecuzione interrotta per timeout ({timeout}s).", -1
 
 
-# Esegue il file e registra l'esito (stdout/stderr/returncode) nella memoria dell'utente.
 def run_and_record(path: str, user_id: int, timeout: int = DEFAULT_TIMEOUT) -> tuple[str, str, int]:
+    """Esegue un file Python e registra l'esito nella cronologia dell'utente.
+
+    Args:
+        path: Percorso del file .py da eseguire.
+        user_id: Identificativo dell'utente attivo, per la cronologia.
+        timeout: Secondi massimi di esecuzione.
+
+    Returns:
+        Una tupla (stdout, stderr, returncode) come restituita da run_file.
+
+    Raises:
+        FileNotFoundError: Se il file non esiste.
+        ValueError: Se il file non ha estensione .py.
+    """
     stdout, stderr, returncode = run_file(path, timeout=timeout)
 
     memory.add_message(user_id, "user", f"[run] {path}", tool_used="code_exec")

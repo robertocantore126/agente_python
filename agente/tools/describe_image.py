@@ -8,9 +8,24 @@ import memory
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 
 
-# Descrive un'immagine tramite il modello vision. A differenza degli altri tool,
-# non usa memory.build_context_messages: il modello vision riceve solo prompt + immagine.
 def describe(image_path: str, user_id: int) -> str:
+    """Descrive un'immagine tramite il modello vision e registra l'operazione.
+
+    A differenza degli altri tool riceve solo prompt + immagine, senza cronologia
+    (operazione stateless).
+
+    Args:
+        image_path: Percorso dell'immagine (.jpg, .jpeg o .png).
+        user_id: Identificativo dell'utente attivo, per la cronologia.
+
+    Returns:
+        La descrizione testuale dell'immagine prodotta dal modello.
+
+    Raises:
+        FileNotFoundError: Se l'immagine non esiste.
+        ValueError: Se il formato dell'immagine non e' supportato.
+        llm_client.LLMError: Se la chiamata al modello fallisce.
+    """
     path = Path(image_path)
     if not path.exists():
         raise FileNotFoundError(f"Immagine non trovata: {image_path}")

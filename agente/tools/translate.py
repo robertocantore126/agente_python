@@ -10,11 +10,29 @@ from tools.summarize import extract_text
 SYSTEM_PROMPT = "Sei un assistente che traduce testi in modo fedele e naturale."
 
 
-# Traduce un file di testo nella lingua target e salva il risultato accanto all'originale
-# (es. "documento.txt" -> "documento.en.txt").
 def translate_file(path: str, target_lang: str, user_id: int) -> tuple[str, Path]:
+    """Traduce un file nella lingua richiesta e salva il risultato su disco.
+
+    Il file tradotto viene creato accanto all'originale, con la lingua nel nome
+    (es. "documento.txt" -> "documento.english.txt"). La cronologia non viene
+    inserita nel contesto: e' un'operazione stateless, lo storico rischierebbe
+    solo di sviare il modello.
+
+    Args:
+        path: Percorso del file di origine (.txt o .pdf).
+        target_lang: Lingua di destinazione (es. "english", "spagnolo").
+        user_id: Identificativo dell'utente attivo, per la cronologia.
+
+    Returns:
+        Una tupla (testo_tradotto, percorso_file_salvato).
+
+    Raises:
+        FileNotFoundError: Se il file di origine non esiste.
+        ValueError: Se il formato del file non e' supportato.
+        llm_client.LLMError: Se la chiamata al modello fallisce.
+    """
     text = extract_text(path)
-    context = memory.build_context_messages(user_id, SYSTEM_PROMPT)
+    context = [{"role": "system", "content": SYSTEM_PROMPT}]
 
     prompt = (
         f"Traduci il seguente testo in {target_lang}. "

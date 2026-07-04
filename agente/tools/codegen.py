@@ -10,37 +10,55 @@ import memory
 LANG_EXTENSIONS = {"python": "py", "javascript": "js", "bash": "sh", "java": "java", "c": "c"}
 
 
-# Estrae il codice da un blocco ```lang ... ``` nella risposta del modello;
-# se il modello non lo racchiude in un blocco, usa l'intera risposta come fallback.
 def _extract_code_block(text: str, lang: str) -> str:
+    """Estrae il codice da un blocco ```lang ... ``` nella risposta del modello.
+
+    Args:
+        text: Testo completo restituito dal modello.
+        lang: Linguaggio atteso, usato per riconoscere il blocco.
+
+    Returns:
+        Il codice contenuto nel blocco; se il modello non usa un blocco,
+        viene restituito l'intero testo come fallback.
+    """
     match = re.search(rf"```(?:{lang})?\s*\n(.*?)```", text, re.DOTALL | re.IGNORECASE)
     if match:
         return match.group(1).strip()
     return text.strip()
 
 
-SYSTEM_PROMPT = "Sei un assistente esperto di programmazione."
+SYSTEM_PROMPT = (
+    "Sei un assistente esperto di programmazione. Restituisci solo codice valido "
+    "in un blocco ```lang ... ```, senza spiegazioni fuori dal blocco."
+)
 
 
-# Genera codice da una descrizione in linguaggio naturale.
-# Con cot=True chiede al modello di ragionare passo passo prima di scrivere il codice
-# (Chain-of-Thought), utile per task piu' complessi a scapito di una risposta piu' lunga.
 def generate(prompt: str, user_id: int, lang: str = "python", cot: bool = False) -> str:
-    context = memory.build_context_messages(user_id, SYSTEM_PROMPT)
+    """Genera codice a partire da una descrizione in linguaggio naturale.
+
+    Args:
+        prompt: Descrizione testuale del codice da generare.
+        user_id: Identificativo dell'utente attivo, per la cronologia.
+        lang: Linguaggio di programmazione desiderato (default "python").
+        cot: Se True, chiede al modello di ragionare passo passo
+            (Chain-of-Thought) prima di produrre il codice.
+
+    Returns:
+        Il codice generato, gia' estratto dal blocco della risposta.
+
+    Raises:
+        llm_client.LLMError: Se la chiamata al modello fallisce.
+    """
+    context = [{"role": "system", "content": SYSTEM_PROMPT}]
 
     if cot:
-        thought_prompt = (
-            f"Ragiona passo per passo (Thought) su come implementare questo task in {lang}, "
+        user_prompt = (
+            f"Ragiona passo per passo su come implementare questo task in {lang}, "
             f"poi scrivi il codice finale in un blocco ```{lang} ... ```.\n\nTask: {prompt}"
         )
-        response = llm_client.chat(context + [{"role": "user", "content": thought_prompt}])
     else:
-        code_prompt = (
-            f"Scrivi codice {lang} per il seguente task. "
-            f"Restituisci solo il codice in un blocco ```{lang} ... ```, senza spiegazioni.\n\n"
-            f"Task: {prompt}"
-        )
-        response = llm_client.chat(context + [{"role": "user", "content": code_prompt}])
+        user_prompt = f"Scrivi codice {lang} per questo task, in un blocco ```{lang} ... ```.\n\nTask: {prompt}"
+    response = llm_client.chat(context + [{"role": "user", "content": user_prompt}])
 
     code = _extract_code_block(response, lang)
 
@@ -49,9 +67,18 @@ def generate(prompt: str, user_id: int, lang: str = "python", cot: bool = False)
     return code
 
 
-# Salva il codice generato su file, usando un nome con timestamp se l'utente
-# non ne specifica uno esplicito con --output.
 def save_to_file(code: str, output: str | None, lang: str = "python") -> Path:
+    """Salva il codice generato su file.
+
+    Args:
+        code: Il codice da scrivere su disco.
+        output: Percorso del file di destinazione; se None, viene generato un
+            nome con timestamp (es. "generated_20260704_120000.py").
+        lang: Linguaggio, usato per scegliere l'estensione quando output e' None.
+
+    Returns:
+        Il percorso del file effettivamente scritto.
+    """
     if output:
         output_path = Path(output)
     else:

@@ -14,20 +14,42 @@ ollama pull llava                 # modello vision per describe
 ollama serve                      # se non già in esecuzione come servizio
 ```
 
-## Modelli usati
+## Backend: modello locale o API
 
-- **Testo** (riassunto, traduzione, codegen): `mistral:7b-instruct` — configurabile con la variabile d'ambiente `AGENTE_TEXT_MODEL` (es. `phi3:mini` per risposte più veloci).
-- **Vision** (descrizione immagini): `llava` — configurabile con `AGENTE_VISION_MODEL`.
+Il programma può usare due backend, scelti con `AGENTE_BACKEND`:
+
+- `local` (default): modello via **Ollama** in locale.
+- `api`: endpoint **OpenAI-compatible** (default [Groq](https://console.groq.com), gratuito e veloce). Utile quando la macchina non ha hardware adatto a Ollama.
+
+### Backend locale (Ollama)
+
+- **Testo**: `mistral:7b-instruct` — configurabile con `AGENTE_TEXT_MODEL` (es. `phi3:mini` per risposte più veloci, o un modello più piccolo se la GPU ha poca VRAM).
+- **Vision**: `llava` — configurabile con `AGENTE_VISION_MODEL`.
 - Host Ollama configurabile con `OLLAMA_HOST` (default `http://localhost:11434`).
+
+### Backend API (es. Groq)
+
+```bash
+set AGENTE_BACKEND=api
+set AGENTE_API_KEY=gsk_...          # chiave da console.groq.com (gratuita)
+# opzionali (hanno gia' un default sensato):
+set AGENTE_API_MODEL=meta-llama/llama-4-scout-17b-16e-instruct
+set AGENTE_API_BASE_URL=https://api.groq.com/openai/v1
+```
+
+Il modello di default (`Llama 4 Scout`) è multimodale, quindi gestisce sia i comandi testuali sia `describe`. Per usare un altro provider (OpenAI, OpenRouter…) basta cambiare `AGENTE_API_BASE_URL`, `AGENTE_API_KEY` e `AGENTE_API_MODEL`. La lista dei modelli Groq attivi è su `https://api.groq.com/openai/v1/models`.
 
 ## Utenti e memoria
 
-Non è richiesta password: `agente login <username>` crea l'utente se non esiste e lo imposta come attivo per i comandi successivi (sessione salvata in `db/.session.json`). Ogni utente ha la propria cronologia in `db/database.db`, iniettata come contesto nelle chiamate successive al modello.
+`agente login <username> [password]` accede all'utente: al primo accesso lo crea con la password scelta, altrimenti verifica che la password combaci. Se ometti la password, la CLI la chiede a schermo (`Password: `). L'utente attivo è salvato in `db/.session.json` per i comandi successivi. Ogni utente ha la propria cronologia in `db/database.db`, consultabile con il comando `history`.
+
+> Nota: la password è salvata **in chiaro** nella tabella `users`. È una semplificazione didattica; in produzione si salverebbe un hash con salt (es. `hashlib.pbkdf2_hmac`).
 
 ## Comandi
 
 ```bash
-python main.py login alice
+python main.py login alice segreta123
+python main.py login alice            # chiede la password a schermo
 python main.py whoami
 python main.py logout
 
